@@ -1,10 +1,9 @@
-package com.mentoring.cache.guava;
+package com.mentoring.cache.service;
 
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
 import com.mentoring.cache.data.CacheData;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

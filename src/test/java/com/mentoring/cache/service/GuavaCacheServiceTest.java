@@ -1,4 +1,4 @@
-package com.mentoring.cache.guava;
+package com.mentoring.cache.service;
 
 import com.google.common.cache.Cache;
 import com.mentoring.cache.data.CacheData;
@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
