@@ -38,12 +38,9 @@ public class GuavaCacheService {
 
     public GuavaCacheService() {
 
-        RemovalListener<String, CacheData> listener = new RemovalListener<String, CacheData>() {
-            @Override
-            public void onRemoval(RemovalNotification<String, CacheData> n) {
-                if (n.wasEvicted()) {
-                    logger.info("Item: {}, was removed.", n.getValue());
-                }
+        RemovalListener<String, CacheData> listener = n -> {
+            if (n.wasEvicted()) {
+                logger.info("Item: {}, was removed.", n.getValue());
             }
         };
 
