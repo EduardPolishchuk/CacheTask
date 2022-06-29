@@ -5,10 +5,7 @@ import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nonnull;
 import java.time.LocalDateTime;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -32,26 +29,37 @@ public class SimpleJavaCacheService<K, V> {
 
     private static final Logger logger = LogManager.getLogger(SimpleJavaCacheService.class);
 
-    private static final int MAX_SIZE = 100_000;
-    private static final long ACCESS_TIME = 5L; // seconds
+    private static final int DEFAULT_MAX_SIZE = 100_000;
+    private static final long DEFAULT_ACCESS_TIME = 5L; // seconds
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newWorkStealingPool();
 
     private final ConcurrentMap<K, CacheDataWrapper<K, V>> cacheMap;
-    private final ConcurrentSkipListMap<LocalDateTime, Set<CacheDataWrapper<K, V>>> timerMap;
-    private final ConcurrentSkipListMap<Integer, Set<CacheDataWrapper<K, V>>> prioritySortedMap;
+    private final NavigableMap<LocalDateTime, Set<CacheDataWrapper<K, V>>> timerMap;
+    private final NavigableMap<Integer, Set<CacheDataWrapper<K, V>>> prioritySortedMap;
     private final AtomicInteger evictCounter;
     private final AtomicLong averageTime; // milliseconds
+    private final int maxSize;
+    private final long accessTime; // seconds
 
     public SimpleJavaCacheService() {
+       this(DEFAULT_MAX_SIZE, DEFAULT_ACCESS_TIME);
+    }
+
+    SimpleJavaCacheService(int maxSize, long accessTime) {
         this.cacheMap = new ConcurrentHashMap<>();
         this.timerMap = new ConcurrentSkipListMap<>();
         this.prioritySortedMap = new ConcurrentSkipListMap<>();
         this.evictCounter = new AtomicInteger(0);
         this.averageTime = new AtomicLong(-1);
+        this.maxSize = maxSize;
+        this.accessTime = accessTime;
+
         EXECUTOR_SERVICE.execute(() -> {
             while (true) {
                 try {
-                    System.out.println("Running");
+                    if (refresh()) {
+                        continue;
+                    }
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -62,18 +70,18 @@ public class SimpleJavaCacheService<K, V> {
 
     @Nonnull
     public V put(@Nonnull K key,
-                              @Nonnull V newValue) {
+                 @Nonnull V newValue) {
         long startTime = System.currentTimeMillis();
 
         CacheDataWrapper<K, V> cacheDataWrapper = cacheMap.get(key);
 
         if (cacheDataWrapper == null) {
-            if (cacheMap.size() == MAX_SIZE) {
+            if (cacheMap.size() == maxSize) {
                 evict();
             }
 
             int frequency = 0;
-            LocalDateTime accessTime = LocalDateTime.now().plusSeconds(ACCESS_TIME);
+            LocalDateTime accessTime = LocalDateTime.now().plusSeconds(this.accessTime);
             CacheDataWrapper<K, V> newCacheDataWrapper = new CacheDataWrapper<>(newValue, frequency, accessTime, key);
             cacheMap.put(key, newCacheDataWrapper);
             addToMap(accessTime, newCacheDataWrapper, timerMap);
@@ -100,7 +108,7 @@ public class SimpleJavaCacheService<K, V> {
         addToMap(cacheDataWrapper.incrementAndGetFrequency(), cacheDataWrapper, prioritySortedMap);
 
         removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
-        addToMap(cacheDataWrapper.updateAndGetAccessTimer(LocalDateTime.now().plusSeconds(ACCESS_TIME)), cacheDataWrapper, timerMap);
+        addToMap(cacheDataWrapper.updateAndGetAccessTimer(LocalDateTime.now().plusSeconds(accessTime)), cacheDataWrapper, timerMap);
 
         return Optional.ofNullable(cacheDataWrapper.getCacheData());
     }
@@ -154,11 +162,27 @@ public class SimpleJavaCacheService<K, V> {
     private boolean refresh() {
         Map.Entry<LocalDateTime, Set<CacheDataWrapper<K, V>>> entryToRemove = 
                 timerMap.firstEntry();
+
+        if (entryToRemove == null || entryToRemove.getKey().isAfter(LocalDateTime.now())) {
+            return false;
+        }
+
         for (CacheDataWrapper<K, V> cacheDataWrapper : entryToRemove.getValue()) {
-            
+            removeFromMap(cacheDataWrapper.getFrequency(), cacheDataWrapper, prioritySortedMap);
+            removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
+            cacheMap.remove(cacheDataWrapper.getKey());
         }
 
         return timerMap.remove(entryToRemove.getKey()) != null;
+    }
+
+    @Override
+    public String toString() {
+        return "SimpleJavaCacheService{" +
+                "cacheMap=" + cacheMap +
+                ", evictCounter=" + evictCounter +
+                ", averageTime=" + averageTime +
+                '}';
     }
 
     static class CacheDataWrapper<K, V> {
