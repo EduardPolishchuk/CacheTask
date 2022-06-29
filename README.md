@@ -5,7 +5,7 @@ Implementation of caching in two different ways:
 #Details:
 Implement cache service. Cache entries (objects) – simple custom class with one String field. Your cache service should have 2 methods: get and put.
 
-Your cache service should fit next requirements:
+Cache services should fit next requirements:
 
     Max Size = 100 000;
     Eviction policy;
