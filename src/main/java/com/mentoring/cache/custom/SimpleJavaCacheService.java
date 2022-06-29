@@ -114,6 +114,10 @@ public class SimpleJavaCacheService<K, V> {
     }
 
     private <E, M extends Map<E, Set<CacheDataWrapper<K, V>>>> void addToMap(E key, CacheDataWrapper<K, V> value, M map) {
+        if (map == null || map.isEmpty()) {
+            return;
+        }
+
         Set<CacheDataWrapper<K, V>> cacheDataList = map.get(key);
         if (cacheDataList == null) {
             Set<CacheDataWrapper<K, V>> newCacheDataList = ConcurrentHashMap.newKeySet();
@@ -125,6 +129,10 @@ public class SimpleJavaCacheService<K, V> {
     }
 
     private <E, M extends Map<E, Set<CacheDataWrapper<K, V>>>> void removeFromMap(E key, CacheDataWrapper<K, V> value, M map) {
+        if (map == null || map.isEmpty()) {
+            return;
+        }
+
         Set<CacheDataWrapper<K, V>> cacheDataList = map.get(key);
         if (cacheDataList != null) {
             cacheDataList.remove(value);
