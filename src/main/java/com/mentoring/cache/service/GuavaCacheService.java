@@ -65,4 +65,12 @@ public class GuavaCacheService {
 
         return Optional.ofNullable(cache.getIfPresent(key));
     }
+
+    @Override
+    public String toString() {
+        return "GuavaCacheService{" +
+                "cache=" + cache.asMap() +
+                "stats=" + cache.stats() +
+                '}';
+    }
 }
