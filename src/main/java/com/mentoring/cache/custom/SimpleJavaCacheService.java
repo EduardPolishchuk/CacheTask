@@ -31,26 +31,32 @@ public class SimpleJavaCacheService {
 
     private static final Logger logger = LogManager.getLogger(SimpleJavaCacheService.class);
 
-    private static final int MAX_SIZE = 5;
+    private static final int MAX_SIZE = 100_000;
     private static final long ACCESS_TIME = 5L; // seconds
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newWorkStealingPool();
 
-    private final Map<String, CacheData> cacheMap;
-    private final Map<String, Integer> counterMap;
-    private final NavigableMap<LocalDateTime, CacheData> timerMap;
-    private final Map<CacheData, LocalDateTime> reverseTimerMap;
-    private final NavigableMap<Integer, LinkedHashSet<CacheData>> prioritySortedMap;
+    private final Map<String, CacheDataWrapper> cacheMap;
+    private final NavigableMap<LocalDateTime, LinkedHashSet<CacheDataWrapper>> timerMap;
+    private final NavigableMap<Integer, LinkedHashSet<CacheDataWrapper>> prioritySortedMap;
     private final AtomicInteger evictCounter;
     private final AtomicLong averageTime; // milliseconds
 
     public SimpleJavaCacheService() {
         this.cacheMap = new HashMap<>();
-        this.counterMap = new HashMap<>();
         this.timerMap = new TreeMap<>();
-        this.reverseTimerMap = new HashMap<>();
         this.prioritySortedMap = new TreeMap<>();
         this.evictCounter = new AtomicInteger(0);
         this.averageTime = new AtomicLong(-1);
+        EXECUTOR_SERVICE.execute(() -> {
+            while (true){
+                try {
+                    System.out.println("Running");
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
     }
 
     @Nonnull
@@ -58,30 +64,19 @@ public class SimpleJavaCacheService {
         long startTime = System.currentTimeMillis();
 
         String newValueString = newValue.getString();
-        CacheData cacheData = cacheMap.get(newValueString);
+        CacheDataWrapper cacheDataWrapper = cacheMap.get(newValueString);
 
-        int frequency = 0;
-
-        if (cacheData == null) {
+        if (cacheDataWrapper == null) {
             if (cacheMap.size() == MAX_SIZE) {
                 evict();
             }
 
-            cacheData = newValue;
+            int frequency = 0;
             LocalDateTime accessTime = LocalDateTime.now().plusSeconds(ACCESS_TIME);
-
-            timerMap.put(accessTime, cacheData);
-            reverseTimerMap.put(cacheData, accessTime);
-            cacheMap.put(newValueString, cacheData);
-            counterMap.put(newValueString, frequency);
-        }
-        LinkedHashSet<CacheData> cacheDataList = prioritySortedMap.get(frequency);
-        if (cacheDataList == null) {
-            LinkedHashSet<CacheData> newCacheDataList = new LinkedHashSet<>();
-            newCacheDataList.add(cacheData);
-            prioritySortedMap.put(frequency, newCacheDataList);
-        } else {
-            cacheDataList.add(newValue);
+            CacheDataWrapper newCacheDataWrapper = new CacheDataWrapper(newValue, frequency, accessTime);
+            addToMap(accessTime, newCacheDataWrapper, timerMap);
+            cacheMap.put(newValueString, newCacheDataWrapper);
+            addToMap(frequency, newCacheDataWrapper, prioritySortedMap);
         }
 
         calculateAndStoreAverageTime(System.currentTimeMillis() - startTime);
@@ -95,32 +90,39 @@ public class SimpleJavaCacheService {
 
     @Nonnull
     public synchronized Optional<CacheData> get(@Nonnull String key) {
-        CacheData obtainedCacheData = cacheMap.get(key);
-        if (obtainedCacheData == null) {
+        CacheDataWrapper cacheDataWrapper = cacheMap.get(key);
+        if (cacheDataWrapper == null) {
             return Optional.empty();
         }
 
-        Integer frequencyFromCache = counterMap.remove(key);
-        int newFrequency = frequencyFromCache + 1;
-        counterMap.put(key, newFrequency);
-        LocalDateTime removed = reverseTimerMap.remove(obtainedCacheData);
-        LocalDateTime dateTime = LocalDateTime.now().plusSeconds(ACCESS_TIME);
-        reverseTimerMap.put(obtainedCacheData, dateTime);
-        LinkedHashSet<CacheData> listToRefresh = prioritySortedMap.get(frequencyFromCache);
-        timerMap.remove(removed);
-        timerMap.put(dateTime, obtainedCacheData);
-        if (listToRefresh != null) {
-            listToRefresh.remove(obtainedCacheData);
-        }
-        LinkedHashSet<CacheData> cacheDataList = prioritySortedMap.get(newFrequency);
+        removeFromMap(cacheDataWrapper.getFrequency(), cacheDataWrapper, prioritySortedMap);
+        addToMap(cacheDataWrapper.incrementAndGetFrequency(), cacheDataWrapper, prioritySortedMap);
+
+        removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
+        addToMap(cacheDataWrapper.updateAndGetAccessTimer(LocalDateTime.now().plusSeconds(ACCESS_TIME)), cacheDataWrapper, timerMap);
+
+        return Optional.ofNullable(cacheDataWrapper.getCacheData());
+    }
+
+    private <K, M extends Map<K, LinkedHashSet<CacheDataWrapper>>> void addToMap(K key, CacheDataWrapper value, M map) {
+        LinkedHashSet<CacheDataWrapper> cacheDataList = map.get(key);
         if (cacheDataList == null) {
-            LinkedHashSet<CacheData> newCacheDataList = new LinkedHashSet<>();
-            newCacheDataList.add(obtainedCacheData);
-            prioritySortedMap.put(newFrequency, newCacheDataList);
+            LinkedHashSet<CacheDataWrapper> newCacheDataList = new LinkedHashSet<>();
+            newCacheDataList.add(value);
+            map.put(key, newCacheDataList);
         } else {
-            cacheDataList.add(obtainedCacheData);
+            cacheDataList.add(value);
         }
-        return Optional.ofNullable(cacheMap.get(key));
+    }
+
+    private <K, M extends Map<K, LinkedHashSet<CacheDataWrapper>>> void removeFromMap(K key, CacheDataWrapper value, M map) {
+        LinkedHashSet<CacheDataWrapper> cacheDataList = map.get(key);
+        if (cacheDataList != null) {
+            cacheDataList.remove(value);
+            if (cacheDataList.size() == 0) {
+                map.remove(key);
+            }
+        }
     }
 
     private void calculateAndStoreAverageTime(long time) {
@@ -133,29 +135,32 @@ public class SimpleJavaCacheService {
     }
 
     private void evict() {
-        Map.Entry<Integer, LinkedHashSet<CacheData>> entryToRemove = prioritySortedMap.pollFirstEntry();
+        Map.Entry<Integer, LinkedHashSet<CacheDataWrapper>> entryToRemove = prioritySortedMap.pollFirstEntry();
         entryToRemove.getValue().stream()
                 .findFirst()
-                .ifPresent(cacheData -> {
-                    String cacheDataString = cacheData.getString();
+                .ifPresent(cacheDataWrapper -> {
 
-                    logger.info("Item: {}, was removed.", cacheData);
+
+                    logger.info("Item: {}, was removed.", cacheDataWrapper.getCacheData());
                     evictCounter.incrementAndGet();
-                    cacheMap.remove(cacheDataString);
-                    LocalDateTime removeTimer = reverseTimerMap.remove(cacheData);
-                    timerMap.remove(removeTimer);
-
+                    cacheMap.remove(cacheDataWrapper.getCacheData().getString());
+                    removeFromMap(cacheDataWrapper.getFrequency(), cacheDataWrapper, prioritySortedMap);
+                    removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
                 });
 
     }
 
-    static class PriorityCacheData {
+    static class CacheDataWrapper {
+        @Nonnull
         private final CacheData cacheData;
         private int frequency;
+        @Nonnull
+        private LocalDateTime accessTimer;
 
-        public PriorityCacheData(CacheData cacheData, int frequency) {
+        public CacheDataWrapper(CacheData cacheData, int frequency, LocalDateTime accessTimer) {
             this.cacheData = cacheData;
             this.frequency = frequency;
+            this.accessTimer = accessTimer;
         }
 
         public CacheData getCacheData() {
@@ -170,15 +175,28 @@ public class SimpleJavaCacheService {
             this.frequency = frequency;
         }
 
+        public LocalDateTime getAccessTimer() {
+            return accessTimer;
+        }
+
+        public void setAccessTimer(LocalDateTime accessTimer) {
+            this.accessTimer = accessTimer;
+        }
+
         public int incrementAndGetFrequency() {
             return ++frequency;
+        }
+
+        public LocalDateTime updateAndGetAccessTimer(LocalDateTime accessTimer) {
+            this.accessTimer = accessTimer;
+            return accessTimer;
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            PriorityCacheData that = (PriorityCacheData) o;
+            CacheDataWrapper that = (CacheDataWrapper) o;
             return Objects.equals(cacheData, that.cacheData);
         }
 
