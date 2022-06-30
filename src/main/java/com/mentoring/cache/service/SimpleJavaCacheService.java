@@ -42,7 +42,7 @@ public class SimpleJavaCacheService<K, V> {
     private final long accessTime; // seconds
 
     public SimpleJavaCacheService() {
-       this(DEFAULT_MAX_SIZE, DEFAULT_ACCESS_TIME);
+        this(DEFAULT_MAX_SIZE, DEFAULT_ACCESS_TIME);
     }
 
     SimpleJavaCacheService(int maxSize, long accessTime) {
@@ -60,7 +60,7 @@ public class SimpleJavaCacheService<K, V> {
                     if (refresh()) {
                         continue;
                     }
-                    Thread.sleep(1000);
+                    Thread.sleep(500);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -114,7 +114,7 @@ public class SimpleJavaCacheService<K, V> {
     }
 
     private <E, M extends Map<E, Set<CacheDataWrapper<K, V>>>> void addToMap(E key, CacheDataWrapper<K, V> value, M map) {
-        if (map == null || map.isEmpty()) {
+        if (key == null || value == null || map == null) {
             return;
         }
 
@@ -129,7 +129,7 @@ public class SimpleJavaCacheService<K, V> {
     }
 
     private <E, M extends Map<E, Set<CacheDataWrapper<K, V>>>> void removeFromMap(E key, CacheDataWrapper<K, V> value, M map) {
-        if (map == null || map.isEmpty()) {
+        if (key == null || value == null || map == null) {
             return;
         }
 
@@ -168,7 +168,7 @@ public class SimpleJavaCacheService<K, V> {
     }
 
     private boolean refresh() {
-        Map.Entry<LocalDateTime, Set<CacheDataWrapper<K, V>>> entryToRemove = 
+        Map.Entry<LocalDateTime, Set<CacheDataWrapper<K, V>>> entryToRemove =
                 timerMap.firstEntry();
 
         if (entryToRemove == null || entryToRemove.getKey().isAfter(LocalDateTime.now())) {
