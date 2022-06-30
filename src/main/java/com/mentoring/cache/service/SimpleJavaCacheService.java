@@ -110,7 +110,7 @@ public class SimpleJavaCacheService<K, V> {
         removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
         addToMap(cacheDataWrapper.updateAndGetAccessTimer(LocalDateTime.now().plusSeconds(accessTime)), cacheDataWrapper, timerMap);
 
-        return Optional.ofNullable(cacheDataWrapper.getCacheData());
+        return Optional.of(cacheDataWrapper.getCacheData());
     }
 
     private <E, M extends Map<E, Set<CacheDataWrapper<K, V>>>> void addToMap(E key, CacheDataWrapper<K, V> value, M map) {
@@ -179,6 +179,7 @@ public class SimpleJavaCacheService<K, V> {
             removeFromMap(cacheDataWrapper.getFrequency(), cacheDataWrapper, prioritySortedMap);
             removeFromMap(cacheDataWrapper.getAccessTimer(), cacheDataWrapper, timerMap);
             cacheMap.remove(cacheDataWrapper.getKey());
+            logger.info("Item: {}, was removed.", cacheDataWrapper.getCacheData());
         }
 
         return timerMap.remove(entryToRemove.getKey()) != null;
@@ -213,6 +214,8 @@ public class SimpleJavaCacheService<K, V> {
             this.key = key;
         }
 
+
+        @Nonnull
         public V getCacheData() {
             return cacheData;
         }
@@ -226,6 +229,7 @@ public class SimpleJavaCacheService<K, V> {
             return key;
         }
 
+        @Nonnull
         public LocalDateTime getAccessTimer() {
             return accessTimer;
         }
@@ -234,7 +238,8 @@ public class SimpleJavaCacheService<K, V> {
             return frequency.incrementAndGet();
         }
 
-        public LocalDateTime updateAndGetAccessTimer(LocalDateTime accessTimer) {
+        @Nonnull
+        public LocalDateTime updateAndGetAccessTimer(@Nonnull LocalDateTime accessTimer) {
             this.accessTimer = accessTimer;
             return accessTimer;
         }
